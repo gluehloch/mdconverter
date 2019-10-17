@@ -1,3 +1,5 @@
+/*jshint esversion: 6 */
+
 const glob = require("glob");
 const fs = require('fs');
 const showdown = require('showdown');
