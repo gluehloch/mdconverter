@@ -1,16 +1,7 @@
-## Angular, Java, Spring-Bootstrap, JSON
-
-Eine beliebte Frage innerhalb einer (Java) REST-Anwendung.
-Wie übergebe ich Datum und Zeitstempel an das Frontend?
-* Brauche ich Zeitzonen?
-* Als vorformatierten String. Dann eröffnet sich die Frage, welches
-  Format soll verwendet werden? Soll gleich das Ausgabeformat verwendet
-  werden, wie es der Anwender sieht? Oder eher Javascript freundlich, so dass gleich ein Javascript Date
-  erstellt werden kann?
-* Als Unix Timestamp in Millisekunden.
-
-Für diese Fragen habe ich mir ein Beispielprojekt auf Github angelegt. Zu finden
-unter [Springboot Demo](https://github.com/gluehloch/springboot-demo).
+## Java, Date, Rest, Javascript,...
+In der Aufzählung oben fehlen SpringBoot, WebComponents
+und irgendwas mit Containern oder Cloud.
+Also [hier](https://github.com/gluehloch/springboot-demo) ist das Beispielprojekt auf Github.
 Die Anwendung mit
 ```
 git clone git@github.com:gluehloch/springboot-demo.git
@@ -19,24 +10,41 @@ und
 ```
 mvn clean package
 ```
-bauen. Im Anschluss
-das gepackte Jar mit
+bauen. Im Anschluss das gepackte Jar mit
 ```
 java -jar ./target/restdemo-1.0.jar
 ```
-starten.
-Unter der Adresse `http://localhost:8080/demo/ping` findet sich
+starten. Unter der Adresse `http://localhost:8080/demo/ping` findet sich
 eine Response mit verschiedenen Datumsformaten wieder.
-Die Anwendung verwendet Spring-Boot bzw. das eingebaute Jackson für die 
-Serialisierung/Deserialisierung von Objekten.
+
+Die Anwendung verwendet Spring-Boot bzw. das eingebaute Jackson für die
+Serialisierung/Deserialisierung von Objekten. Über die `application.properties`
+kann das allgemeine Verhalten von Jackson eingestellt werden. Die folgenden Eigenschaften sind dafür zuständig:
+```
+spring.jackson.serialization.write_dates_as_timestamps = false
+spring.jackson.date-format = yyyy-MM-dd HH:mm:ss
+spring.jackson.time-zone = Europe/Berlin
+```
+Ich denke, die Schalter oben sind weitestgehend selbsterklärend.
+Auf die Timezone/Länderkennzeichen würde ich nicht verzichten.
+Auch wenn mir bekannt ist, wo der Server steht und die Konsumenten
+vermutlich nur aus Deutschland kommen. Aber wer denkt heute noch so klein?!?
+In der Beispielanwendung habe ich mich für obigen Einstellungen entschieden.
+Für `java.util.Date` erhält man damit die folgende Ausgabe  
+Z.B. `2019-10-17 18:49:10`. Wer es genauer mag, packt die
+Millisekunden mit hinten dran. Genauere Informationen finden sich
+in der Klasse `PingDateTime`. Dort habe ich verschiedene Datumsformaten
+hinterlegt.
 
 Die nächsten Abschnitte gliedern sich in einen Server und einen Client Teil.
+Der Server ist mit Java und SpringBoot implementiert. Das Frontend besteht
+aus einer HTML und einer Javascript Datei.
 
 ### Server
 
 #### RestController:
 Hier ein Auszug aus dem Spring-Boot RestController:
-```
+```Java
 @RestController
 @RequestMapping("/demo")
 public class DateTimeController {
@@ -51,8 +59,9 @@ public class DateTimeController {
 }
 ```
 
-Interessant ist die Klasse PingDateTime. Hier passiert die Magic
-(Für die Magic ist [Jackson](https://github.com/FasterXML/jackson) verantwortlich).
+Interessant ist die Klasse PingDateTime.
+Für die Datum/String Transformation ist
+[Jackson](https://github.com/FasterXML/jackson) verantwortlich.
 Mit der Annotation `@JsonFormat` in der Klasse `DateTimeJson` wird der Serialisierungsprozess gesteuert.
 Out-of-the-box funktioniert die Annotation nur mit den Java Datentypen `java.util.Date`
 und `java.time.LocalDate` bzw. `java.time.LocalDateTime`. Für den Joda `org.joda.time.DateTime`
@@ -64,19 +73,26 @@ eine Objekt-Dekonstruktion per Reflection. Im Falle von `java.util.Date` werden
 die Millisekunden (Unix-Timestamp) zurückgeliefert. In der Spring-Boot Anwendung
 wird `dateTimeMillies` formatiert ausgegeben trotz fehlender `@JsonFormat` Angabe.
 Das [Joda](https://www.joda.org/joda-time/quickstart.html) DateTime Objekt
-erfährt bei der Serialisierung eine detailreiche Dekonstruktion.
-Als Beispiel für Zeitzonen habe ich einmal 'Europe/Berlin' und 'UTC' gewählt.
+erfährt bei der Serialisierung eine detailreiche Dekonstruktion, wenn nicht
+die oben genannten Extension verwendet wird.
+
+Eine Bemerkung zu dem Kürzel "UTC".
 "UTC" ist die sogenannte Weltzeit (Coordinated Universal Time). Diese definiert
 keine Zeitzonen und gilt einheitlich auf der ganzen Welt. 'UTC' ist im strengen
 Sinne keine Zeitzone. Die Parameterbezeichnung 'timezone' für den Typ 'UTC' ist
-also nicht ganz korrekt.
+also nicht ganz korrekt. Die Verwendung von "UTC" hat dann einen Vorteil,
+wenn die Konsumenten in verschiedenen Zeitzonen sitzen.
 
-Das Datumsangaben ohne Zeitzonen keine gute Idee sind, ist auch der Grund
+Das Datumsangaben ohne Zeitzonen keine gute Idee sind, ist auch der Grund,
 warum `java.util.Date` durch `java.time.LocalDateTime` ersetzt werden sollte.
 
 #### JSON Objekt
-```
-public class DateTimeJson {
+Das REST/JSON Modell mit den verschiedenen Formatangaben:
+```Java
+public class PingDateTime {
+
+    // -- java.util.Date
+
     @JsonFormat(
         shape = JsonFormat.Shape.STRING,
         pattern = "dd.MM.yyyy HH:mm",
@@ -84,20 +100,38 @@ public class DateTimeJson {
         timezone = "Europe/Berlin")
     private Date dateTimeBerlin;
 
+    @JsonFormat(shape =
+        JsonFormat.Shape.STRING,
+        pattern = "dd.MM.yyyy HH:mm:ss.SSSZ",
+        locale = "de_DE",
+        timezone = "Europe/Berlin")
+    private Date dateTimeBerlinWithMilli;
+
     @JsonFormat(
         shape = JsonFormat.Shape.STRING,
         pattern = "dd.MM.yyyy HH:mm",
-        locale = "de_DE", timezone = "UTC")
+        locale = "de_DE",
+        timezone = "UTC")
     private Date dateTimeUTC;
 
-    private DateTime jodaDateTime;
-    
-    private Date dateTimeMillies;
+    private Date dateTimeWithoutFormatDefinition;
+ 
+    // -- Joda DateTime
 
     @JsonFormat(
         shape = JsonFormat.Shape.STRING,
         pattern = "dd.MM.yyyy HH:mm",
-        locale = "de_DE", timezone = "UTC")
+        locale = "de_DE",
+        timezone = "Europe/Berlin")
+    private DateTime jodaDateTimeBerlin;
+
+    // -- java.time.LocalDateTime
+
+    @JsonFormat(
+        shape = JsonFormat.Shape.STRING,
+        pattern = "dd.MM.yyyy HH:mm",
+        locale = "de_DE",
+        timezone = "UTC")
     private LocalDateTime localDateTimeUTC;
 
     @JsonFormat(
@@ -107,9 +141,23 @@ public class DateTimeJson {
         timezone = "Europe/Berlin")
     private LocalDateTime localDateTimeBerlin;
 
-    private LocalDateTime localDateTime;
+    // getter and setter ...
 
-    // getter and setters...
+    /**
+     * Initialisierung.
+     */
+    public void setDateTime(Date dateTime) {
+        this.dateTimeUTC = dateTime;
+        this.dateTimeBerlin = dateTime;
+        this.dateTimeBerlinWithMilli = dateTime;
+        this.dateTimeWithoutFormatDefinition = dateTime;
+        this.localDateTimeUTC =
+            dateTime.toInstant().atZone(ZoneId.of("UTC")).toLocalDateTime();
+        this.localDateTimeBerlin =
+            dateTime.toInstant().atZone(ZoneId.of("Europe/Berlin")).toLocalDateTime();
+        this.jodaDateTimeBerlin = DateTime.now();
+    }
+
 }
 ```
 
@@ -121,71 +169,136 @@ Kommandozeilenaufruf
 `http http://localhost:8080/demo/ping` erhält man eine nett formatierte Ausgabe
 der Response:
 
-```
-HTTP/1.1 200
+```JSON
+HTTP/1.1 200 
 Content-Type: application/json;charset=UTF-8
-Date: Fri, 11 Oct 2019 14:51:00 GMT
 Transfer-Encoding: chunked
+Date: Fri, 15 Nov 2019 18:26:13 GMT
+Connection: close
 
 {
-    "dateTimeBerlin": "11.10.2019 16:51",
-    "dateTimeMillies": "2019-10-11T14:51:00.072+0000",
-    "dateTimeUTC": "11.10.2019 14:51",
-    "jodaDateTime": {
-        "afterNow": false,
-        "beforeNow": true,
-        "centuryOfEra": 20,
-        "chronology": {
-            "zone": {
-                "fixed": false,
-                "id": "Europe/Berlin",
-                "uncachedZone": {
-                    "cachable": true,
-                    "fixed": false,
-                    "id": "Europe/Berlin"
-                }
-            }
-        },
-        "dayOfMonth": 11,
-        "dayOfWeek": 5,
-        "dayOfYear": 284,
-        "equalNow": false,
-        "era": 1,
-        "hourOfDay": 16,
-        "millis": 1570805460072,
-        "millisOfDay": 60660072,
-        "millisOfSecond": 72,
-        "minuteOfDay": 1011,
-        "minuteOfHour": 51,
-        "monthOfYear": 10,
-        "secondOfDay": 60660,
-        "secondOfMinute": 0,
-        "weekOfWeekyear": 41,
-        "weekyear": 2019,
-        "year": 2019,
-        "yearOfCentury": 19,
-        "yearOfEra": 2019,
-        "zone": {
-            "fixed": false,
-            "id": "Europe/Berlin",
-            "uncachedZone": {
-                "cachable": true,
-                "fixed": false,
-                "id": "Europe/Berlin"
-            }
-        }
-    },
-    "localDateTime": "2019-10-11T14:51:00.072",
-    "localDateTimeBerlin": "11.10.2019 16:51",
-    "localDateTimeUTC": "11.10.2019 14:51"
+  "dateTimeBerlin": "15.11.2019 19:26",
+  "dateTimeUTC": "15.11.2019 18:26",
+  "dateTimeWithoutFormatDefinition": 1573842373004,
+  "jodaDateTimeBerlin": "15.11.2019 19:26",
+  "localDateTimeUTC": "15.11.2019 18:26",
+  "localDateTimeBerlin": "15.11.2019 19:26"
 }
 ```
 Mit curl würde das natürlich auch funktionieren.
 
-### Client 
+### Client
+Als Konsumenten für den REST Service habe ich eine kleine Javascript
+'Anwendung' gebaut, die diesen Servie anzapft und die aktuelle Uhrzeit
+darstellt.
 
+Der Client besteht aus zwei Dateien: `index.html` und `DateTimeController.js`.
+In der HTML Seite ist vor allem das Element `<date-time></date-time>` spannend.
+Das ist der Aufhänger für die WebComponent, die in der JS Datei definiert wird.
+Kurze Anmerkung: Im Internet Explorer oder im Browser Edge funktioniert das
+Beispiel nicht. Siehe [canisuse](https://caniuse.com/#search=components).
+
+#### WebComponent
+In der Datei `DateTimeController.js` finden sich zwei Klassen. Einen Controller
+für das Anzapfen des REST Services auf Server Seite. Interessant ist die
+Funktion `date()`. Diese definiert ein sogenanntes `Promise`. Aufgabe:
+Abfrage der REST Schnittstelle und im Erfolgsfall die Response nach JSON
+konvertieren oder eine Fehlermeldung in der Konsole ausgeben.
+
+```Javascript
+export default class DateTimeController {
+    constructor() {
+        this.$dateTime = null; // Hier speichern wir die aktuelle Uhrzeit.
+    }
+
+    date() {
+        return new Promise((resolve, reject) => {
+            fetch('./demo/ping').then(response => {
+                    return response.json();
+                }).then(data => {
+                    resolve(data);
+                }).catch(err => {
+                    console.error(err);
+                    reject(err);
+                });
+        });
+    }
+
+    getCurrentDateTime(callback) {
+        this.date().then(dateTime => {
+            this.storeDate(dateTime);
+            callback(dateTime);
+        })
+    }
+
+    storeDate(dateTime) {
+        this.$dateTime = dateTime;
+        console.log(dateTime);
+    }
+}
 ```
-{{tippModel.round.dateTime | date: 'dd.MM.yyyy HH:mm': '+0000'}}
+
+Im nächsten Schritt wird ein DOM Element angelegt. Dieses enthält den Button
+zur Abfrage der Uhrzeit und ein Ausgabeelement zur Anzeige der selbigen.
+```Javascript
+const template = document.createElement('template');
+template.innerHTML = `<button>Get Time</button><br/><h3>Uhrzeit:</h3><div id="dateTime"></div>`;
+```
+Die WebComponent selbst findet sich im nächsten Code-Schnipsel:
+```Javascript
+class DateTimeElement extends HTMLElement {
+
+    constructor() {
+        super();
+        this.dateTimeController = new DateTimeController();
+
+        this._shadowRoot = this.attachShadow({ 'mode': 'open' });
+        this._shadowRoot.appendChild(template.content.cloneNode(true));
+        this.$dateTime = this._shadowRoot.querySelector('#dateTime');
+
+        this.$getTimeButton = this._shadowRoot.querySelector('button');
+        this.$getTimeButton.addEventListener('click', (e) => {
+            this.getDateTime();
+        });
+    }
+
+    getDateTime() {
+        this.dateTimeController.getCurrentDateTime((dateTime) => {
+            this.$dateTime.innerHTML = dateTime.dateTimeBerlinWithMilli;
+        });
+    }
+
+    render(dateTime) {
+        this.$dateTime.innerHTML = dateTime.dateTimeBerlin;
+    }
+
+    connectedCallback() {
+        console.log('connected!');
+    }
+
+    disconnectedCallback() {
+        console.log('disconnected!');
+    }
+
+    attributeChangedCallback(name, oldVal, newVal) {
+        console.log(`Attribute: ${name} changed!`);
+    }
+
+    adoptedCallback() {
+        console.log('adopted!');
+    }
+}
+
+window.customElements.define('date-time', DateTimeElement);
+```
+Fertig.
+
+
+#### AngularIO
+Zum Abschluss und als Ergänzung: In AngularIO würde ich ein Javascript Date immer mit
+dem folgenden Ausdruck 'pipen':
+```Javascript
+{{model.dateTime | date: 'dd.MM.yyyy HH:mm': '+0000'}}
 ```
 
 
